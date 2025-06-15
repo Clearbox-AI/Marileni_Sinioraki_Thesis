@@ -16,30 +16,30 @@ This repository contains the codebase for the thesis on **multi-label emotion cl
 ---
 
 ## 🗂️ Project Structure
-│
-├── unseen_subreddits/
-│ ├── init.py
-│ └── preprocess.py
-├── equally_splitted_subreddits/
-├── single_label/
-├── time_series/
-│ └── (same structure)
-│
-├── data_loader.py # Download & load raw dataset
-├── preprocess_common.py # Dataset cleaning, label aggregation
-├── utils.py # Stats, plotting, printing tools
-├── main.py # CLI runner for all preprocessing pipelines
-├── README.md
-└── synthetic_data_tools_comparison.ipynb # Optional comparisons
+-│
+-├── unseen_subreddits/
+-│ ├── init.py
+-│ └── preprocess.py
+-├── equally_splitted_subreddits/
+-├── single_label/
+-├── time_series/
+-│ └── (same structure)
+-│
+-├── data_loader.py # Download & load raw dataset
+-├── preprocess_common.py # Dataset cleaning, label aggregation
+-├── utils.py # Stats, plotting, printing tools
+-├── main.py # CLI runner for all preprocessing pipelines
+-├── README.md
+-└── synthetic_data_tools_comparison.ipynb # Optional comparisons
 
 ## 🚀 Usage
 
 Preprocessing is controlled via a command-line interface in main.py.
 
-# Run all preprocessing strategies
+### Run all preprocessing strategies
 python main.py
 
-# Run only a specific strategy
+### Run only a specific strategy
 python main.py --strategy unseen
 python main.py --strategy equal
 python main.py --strategy time
