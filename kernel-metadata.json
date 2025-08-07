@@ -1,8 +1,23 @@
 {
-    "id": "mariakalo/thesis-marileni",
-    "title": "thesis-marileni",
+    "id": "mariakalo/multilabel-emotion-classification",
+    "title": "Multilabel Emotion Classification with BERT",
     "code_file": "main.py",
     "language": "python",
     "kernel_type": "script",
-    "enable_gpu": true
+    "is_private": false,
+    "enable_gpu": true,
+    "enable_internet": true,
+    "dataset_sources": [
+        "google-research-datasets/go-emotions"
+    ],
+    "competition_sources": [],
+    "kernel_sources": [],
+    "keywords": [
+        "nlp",
+        "bert",
+        "emotion-classification",
+        "multilabel",
+        "transformers",
+        "deep-learning"
+    ]
 }
