@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 # Multilabel Emotion Classification with BERT
 
 This complete pipeline for multilabel emotion classification on the GoEmotions dataset using BERT-based transformers.
@@ -12,4 +10,4 @@ The pipeline includes:
 - **Model**: BERT-based multilabel classifier with custom classification head
 - **Training**: PyTorch training loop with validation
 - **Evaluation**: Comprehensive multilabel metrics
->>>>>>> feat/simple-data-generation
+
