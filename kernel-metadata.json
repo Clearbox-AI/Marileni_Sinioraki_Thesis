@@ -1,0 +1,8 @@
+{
+    "id": "mariakalo/thesis-marileni",
+    "title": "thesis-marileni",
+    "code_file": "main.py",
+    "language": "python",
+    "kernel_type": "script",
+    "enable_gpu": true
+}
