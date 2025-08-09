@@ -5,6 +5,7 @@ Orchestrates the complete pipeline from data preparation to analysis.
 
 import argparse
 import os
+import sys
 from prepare_data import GoEmotionsDataPreparator
 from data_loader import GoEmotionsDataLoader
 from utils import (print_dataset_statistics, print_subreddit_statistics, 
@@ -29,7 +30,7 @@ def main():
     
     args = parser.parse_args()
     
-    # Create necessary directories
+    # Create necessary directories if they don't exist
     create_directories([args.data_dir, args.output_dir, 'data/'])
     
     # Setup W&B if API key provided
@@ -82,8 +83,8 @@ def main():
 def run_full_pipeline():
     """Run the complete pipeline without command line arguments."""
     print("Running complete GoEmotions processing pipeline...")
-    
-    # Create directories
+
+    # Create directories if they don't exist
     create_directories(['data/full_dataset/', 'data/', 'outputs/'])
     
     # Initialize data preparator
@@ -114,7 +115,6 @@ def run_full_pipeline():
 
 if __name__ == "__main__":
     # If no command line arguments provided, run full pipeline
-    import sys
     if len(sys.argv) == 1:
         run_full_pipeline()
     else:

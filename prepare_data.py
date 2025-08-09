@@ -7,7 +7,7 @@ import os
 import subprocess
 import pandas as pd
 import matplotlib.pyplot as plt
-from typing import List, Tuple
+from typing import Tuple
 
 
 class GoEmotionsDataPreparator:
@@ -82,9 +82,11 @@ class GoEmotionsDataPreparator:
             **{col: "sum" for col in self.emotion_cols}
         }).reset_index()
         
-        # Create multi-hot label vector (1 if any rater selected that emotion)
+        # Create multi-hot label vector (1 only if all raters selected that emotion)
         for col in self.emotion_cols:
-            grouped[col] = (grouped[col] > 0).astype(int)
+            # Get the mean - if all raters selected it, mean will be 1.0
+            # If any rater didn't select it, mean will be < 1.0
+            grouped[col] = (df.groupby("id")[col].mean() == 1.0).astype(int)
         
         # Remove posts with no emotion label at all
         grouped["num_labels"] = grouped[self.emotion_cols].sum(axis=1)

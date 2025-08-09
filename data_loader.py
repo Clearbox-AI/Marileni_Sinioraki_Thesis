@@ -4,7 +4,7 @@ Data loading utilities for GoEmotions multi-label emotion classification.
 
 import pandas as pd
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 import os
 
 
