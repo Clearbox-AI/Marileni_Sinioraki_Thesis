@@ -1,6 +1,6 @@
 """
 Main script for GoEmotions multi-label emotion classification.
-Orchestrates the complete pipeline from data preparation to analysis.
+Orchestrates the complete pipeline from data preparation to model training and evaluation.
 """
 
 import argparse
@@ -8,6 +8,7 @@ import os
 import sys
 from prepare_data import GoEmotionsDataPreparator
 from data_loader import GoEmotionsDataLoader
+from trainer import GoEmotionsTrainingPipeline
 from utils import (print_dataset_statistics, print_subreddit_statistics, 
                    plot_emotion_distribution, create_directories, setup_wandb)
 
@@ -21,17 +22,29 @@ def main():
                        help='Prepare and preprocess the dataset')
     parser.add_argument('--analyze', action='store_true', 
                        help='Analyze the dataset statistics')
+    parser.add_argument('--train', action='store_true',
+                       help='Train the BERT model')
     parser.add_argument('--wandb-key', type=str, 
                        help='Weights & Biases API key for experiment tracking')
     parser.add_argument('--data-dir', type=str, default='data/full_dataset/',
                        help='Directory to store raw dataset files')
     parser.add_argument('--output-dir', type=str, default='outputs/',
                        help='Directory to store outputs and plots')
+    parser.add_argument('--model-dir', type=str, default='./results/',
+                       help='Directory to store model results')
+    parser.add_argument('--model-name', type=str, default='bert-base-uncased',
+                       help='HuggingFace model name')
+    parser.add_argument('--epochs', type=int, default=8,
+                       help='Number of training epochs')
+    parser.add_argument('--batch-size', type=int, default=16,
+                       help='Training batch size')
+    parser.add_argument('--learning-rate', type=float, default=2e-5,
+                       help='Learning rate')
     
     args = parser.parse_args()
     
     # Create necessary directories if they don't exist
-    create_directories([args.data_dir, args.output_dir, 'data/'])
+    create_directories([args.data_dir, args.output_dir, args.model_dir, 'data/', './logs/'])
     
     # Setup W&B if API key provided
     if args.wandb_key:
@@ -78,14 +91,48 @@ def main():
         )
         
         print(f"\nAnalysis complete. Outputs saved to {args.output_dir}")
+    
+    # Model training pipeline
+    if args.train:
+        print("\nStarting model training pipeline...")
+        
+        # Initialize training pipeline
+        training_pipeline = GoEmotionsTrainingPipeline(
+            model_name=args.model_name,
+            output_dir=args.model_dir,
+            num_labels=27
+        )
+        
+        # Setup training arguments
+        training_args = training_pipeline.setup_training_args(
+            learning_rate=args.learning_rate,
+            train_batch_size=args.batch_size,
+            eval_batch_size=32,
+            num_epochs=args.epochs,
+            run_name=f"goemotions-{args.model_name.replace('/', '-')}"
+        )
+        
+        # Run complete training pipeline
+        results = training_pipeline.run_complete_pipeline(
+            training_args=training_args,
+            tokenizer_name=args.model_name,
+            max_length=128,
+            train_ratio=0.6,
+            val_ratio=0.2,
+            test_ratio=0.2
+        )
+        
+        print(f"\nTraining complete. Model saved to {args.model_dir}")
+        print(f"Best validation F1: {results['val_metrics']['micro/f1']:.4f}")
+        print(f"Test F1: {results['test_metrics']['micro/f1']:.4f}")
 
 
 def run_full_pipeline():
     """Run the complete pipeline without command line arguments."""
-    print("Running complete GoEmotions processing pipeline...")
+    print("Running complete GoEmotions processing and training pipeline...")
 
     # Create directories if they don't exist
-    create_directories(['data/full_dataset/', 'data/', 'outputs/'])
+    create_directories(['data/full_dataset/', 'data/', 'outputs/', './results/', './logs/'])
     
     # Initialize data preparator
     preparator = GoEmotionsDataPreparator()
@@ -109,7 +156,34 @@ def run_full_pipeline():
     print_dataset_statistics(dataset_stats)
     print_subreddit_statistics(subreddit_stats)
     
-    print("\nPipeline complete!")
+    print("\nData pipeline complete!")
+    
+    # Ask user if they want to proceed with training
+    response = input("\nDo you want to proceed with model training? (y/n): ").strip().lower()
+    
+    if response == 'y' or response == 'yes':
+        print("\nStarting model training...")
+        
+        # Initialize training pipeline
+        training_pipeline = GoEmotionsTrainingPipeline(
+            model_name="bert-base-uncased",
+            output_dir="./results/",
+            num_labels=27
+        )
+        
+        # Run training with default settings
+        results = training_pipeline.run_complete_pipeline(
+            max_length=128,
+            train_ratio=0.6,
+            val_ratio=0.2,
+            test_ratio=0.2
+        )
+        
+        print("\nComplete pipeline finished!")
+        print(f"Final test F1 score: {results['test_metrics']['micro/f1']:.4f}")
+    else:
+        print("Training skipped. Data preparation complete!")
+    
     return df
 
 
