@@ -4,7 +4,8 @@ Training pipeline for GoEmotions multi-label emotion classification.
 
 import os
 import numpy as np
-from typing import Dict, Tuple
+import pandas as pd
+from typing import Dict, Tuple, List
 from transformers import TrainingArguments
 from model import MultiLabelBERT, MultilabelTrainer
 from data_loader import GoEmotionsDataLoader
@@ -303,3 +304,125 @@ class GoEmotionsTrainingPipeline:
         print("=" * 60)
         
         return results
+    
+    def run_downsampling_experiments(self, 
+                                   reduction_percentages: List[float] = None,
+                                   random_state: int = 123,
+                                   **data_kwargs) -> pd.DataFrame:
+        """
+        Run downsampling experiments across multiple reduction levels.
+        
+        Args:
+            reduction_percentages: List of reduction percentages to test
+            random_state: Random seed for reproducibility
+            **data_kwargs: Arguments for data preparation
+            
+        Returns:
+            DataFrame with experiment results
+        """
+        if reduction_percentages is None:
+            reduction_percentages = [10, 20, 30, 40, 50, 60, 70, 80, 90]
+        
+        # Prepare initial data
+        print("Preparing data for downsampling experiments...")
+        self.prepare_data(**data_kwargs)
+        
+        # Get raw DataFrames for downsampling
+        train_df, val_df, test_df = self.data_loader.get_raw_dataframes(
+            data_kwargs.get('train_ratio', 0.6),
+            data_kwargs.get('val_ratio', 0.2), 
+            data_kwargs.get('test_ratio', 0.2)
+        )
+        
+        print(f"\nRunning downsampling experiments with reduction levels: {reduction_percentages}")
+        print(f"Original training samples: {len(train_df)}")
+        
+        metrics_list = []
+        
+        for pct in reduction_percentages:
+            print(f"\n{'='*60}")
+            print(f"REDUCTION EXPERIMENT: {pct}%")
+            print('='*60)
+            
+            try:
+                # 1. Downsample training data
+                down_train = self.data_loader.downsample_by_label_reduction(
+                    train_df, reduction_pct=pct, random_state=random_state
+                )
+                
+                # 2. Convert to HF datasets and tokenize
+                train_ds = self.data_loader.convert_to_hf_dataset(down_train)
+                val_ds = self.data_loader.convert_to_hf_dataset(val_df)
+                test_ds = self.data_loader.convert_to_hf_dataset(test_df)
+                
+                tokenizer_name = data_kwargs.get('tokenizer_name', self.model_name)
+                max_length = data_kwargs.get('max_length', 128)
+                
+                train_ds = self.data_loader.tokenize_dataset(train_ds, tokenizer_name, max_length)
+                val_ds = self.data_loader.tokenize_dataset(val_ds, tokenizer_name, max_length)
+                test_ds = self.data_loader.tokenize_dataset(test_ds, tokenizer_name, max_length)
+                
+                # 3. Create fresh model for this experiment
+                self.model_wrapper = MultiLabelBERT(self.model_name, self.num_labels)
+                
+                # 4. Setup training arguments
+                training_args = self.setup_training_args(
+                    run_name=f"goemotions-downsample-{pct}pct"
+                )
+                
+                # 5. Update datasets for this experiment
+                self.train_ds = train_ds
+                self.val_ds = val_ds
+                self.test_ds = test_ds
+                
+                # 6. Train model
+                print(f"\nTraining on {len(down_train)} downsampled examples...")
+                self.create_trainer(training_args)
+                self.trainer.train()
+                
+                # 7. Evaluate and collect metrics
+                print("Evaluating model...")
+                val_metrics, thresholds = self.evaluate_and_tune_thresholds()
+                test_metrics = self.evaluate_test_set()
+                
+                # 8. Store results
+                result = {
+                    'reduction_pct': pct,
+                    'train_samples': len(down_train),
+                    **{f"test_{k}": v for k, v in test_metrics.items()}
+                }
+                metrics_list.append(result)
+                
+                print(f"Completed {pct}% reduction experiment")
+                
+            except Exception as e:
+                print(f"ERROR in {pct}% experiment: {e}")
+                continue
+        
+        # Create results DataFrame
+        if metrics_list:
+            import matplotlib.pyplot as plt
+            
+            metrics_df = pd.DataFrame(metrics_list).set_index('reduction_pct')
+            
+            print(f"\n{'='*80}")
+            print("DOWNSAMPLING EXPERIMENT SUMMARY")
+            print('='*80)
+            print(metrics_df[['train_samples', 'test_micro/f1', 'test_macro/f1']].round(4))
+            
+            # Plot results (your original plotting code)
+            plt.figure(figsize=(8, 5))
+            plt.plot(metrics_df.index, metrics_df["test_micro/f1"], marker="o", label="micro/F1")
+            plt.plot(metrics_df.index, metrics_df["test_macro/f1"], marker="s", label="macro/F1")
+            plt.xlabel("Downsampling Reduction (%)")
+            plt.ylabel("F1 Score")
+            plt.title("Test F1 vs. Training Set Downsampling")
+            plt.legend()
+            plt.grid(True)
+            plt.tight_layout()
+            plt.show()
+            
+            return metrics_df
+        else:
+            print("No successful experiments completed!")
+            return pd.DataFrame()

@@ -26,6 +26,11 @@ def main():
                        help='Analyze the dataset statistics')
     parser.add_argument('--train', action='store_true',
                        help='Train the BERT model')
+    parser.add_argument('--downsample', action='store_true',
+                       help='Run downsampling experiments')
+    parser.add_argument('--reduction-levels', nargs='+', type=float, 
+                       default=[10, 20, 30, 40, 50, 60, 70, 80, 90],
+                       help='Downsampling reduction percentages to test')
     parser.add_argument('--wandb-key', type=str, 
                        help='Weights & Biases API key for experiment tracking')
     parser.add_argument('--data-dir', type=str, default='data/full_dataset/',
@@ -127,6 +132,64 @@ def main():
         print(f"\nTraining complete. Model saved to {args.model_dir}")
         print(f"Best validation F1: {results['val_metrics']['micro/f1']:.4f}")
         print(f"Test F1: {results['test_metrics']['micro/f1']:.4f}")
+    
+    # Downsampling experiments
+    if args.downsample:
+        print("\nStarting downsampling experiments...")
+        
+        # Initialize training pipeline
+        training_pipeline = GoEmotionsTrainingPipeline(
+            model_name=args.model_name,
+            output_dir=args.model_dir,
+            num_labels=27
+        )
+        
+        # Run downsampling experiments
+        results_df = training_pipeline.run_downsampling_experiments(
+            reduction_percentages=args.reduction_levels,
+            tokenizer_name=args.model_name,
+            max_length=128,
+            train_ratio=0.6,
+            val_ratio=0.2,
+            test_ratio=0.2
+        )
+        
+        # Save results
+        if not results_df.empty:
+            results_path = os.path.join(args.output_dir, "downsampling_results.csv")
+            results_df.to_csv(results_path)
+            print(f"\nDownsampling results saved to {results_path}")
+
+
+def run_downsampling_experiment():
+    """Run standalone downsampling experiment with default settings."""
+    print("Running downsampling experiment...")
+    
+    # Create directories
+    create_directories(['data/', 'outputs/', './results/', './logs/'])
+    
+    # Initialize training pipeline
+    pipeline = GoEmotionsTrainingPipeline(
+        model_name="bert-base-uncased",
+        output_dir="./results/",
+        num_labels=27
+    )
+    
+    # Run experiments with default reduction levels
+    results_df = pipeline.run_downsampling_experiments(
+        reduction_percentages=[10, 20, 30, 40, 50, 60, 70, 80, 90],
+        max_length=128,
+        train_ratio=0.6,
+        val_ratio=0.2,
+        test_ratio=0.2
+    )
+    
+    # Save results
+    if not results_df.empty:
+        results_df.to_csv("outputs/downsampling_results.csv")
+        print("\nDownsampling experiment complete!")
+    
+    return results_df
 
 
 def run_full_pipeline():

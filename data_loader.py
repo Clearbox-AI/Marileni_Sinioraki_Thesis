@@ -246,3 +246,67 @@ class GoEmotionsDataLoader:
         print(f"Max length: {max_length}")
         
         return train_ds, val_ds, test_ds
+    
+    def get_raw_dataframes(self, train_ratio: float = 0.6,
+                          val_ratio: float = 0.2, test_ratio: float = 0.2):
+        """
+        Get raw DataFrames for train/val/test splits (not tokenized).
+        Useful for downsampling experiments that need to modify the raw data.
+        
+        Returns:
+            Tuple of (train_df, val_df, test_df) as pandas DataFrames
+        """
+        return self.split_by_subreddit(train_ratio, val_ratio, test_ratio)
+    
+    def downsample_by_label_reduction(self, df: pd.DataFrame,
+                                    reduction_pct: float,
+                                    random_state: int = 42) -> pd.DataFrame:
+        """
+        Downsample each emotion by a given percentage in a multi-label DataFrame.
+
+        Args:
+            df:            Original DataFrame containing emotion columns.
+            reduction_pct: Percentage to remove from each label (0–100).
+            random_state:  Seed for reproducibility.
+
+        Returns:
+            A new DataFrame with ~reduction_pct% of each emotion's examples removed,
+            and prints before/after counts sorted by original frequency.
+        """
+        # 1. Compute original & target counts per label (Series indexed by emotion_cols)
+        orig_counts = df[self.emotion_cols].sum().astype(int)
+        target_counts = (orig_counts * (1 - reduction_pct / 100.0)).astype(int)
+
+        # 2. Move to numpy for disambiguated indexing
+        Y = df[self.emotion_cols].values.astype(int)             
+        current_counts = orig_counts.values.copy()          
+        target_vals    = target_counts.values               
+
+        keep = np.ones(len(df), dtype=bool)
+        rng = np.random.RandomState(random_state)
+
+        # 3. Greedy removal
+        for idx in rng.permutation(len(df)):
+            labels = np.where(Y[idx] == 1)[0]
+            if np.all(current_counts[labels] - 1 >= target_vals[labels]):
+                keep[idx] = False
+                current_counts[labels] -= 1
+                if np.all(current_counts <= target_vals):
+                    break
+
+        # 4. Build downsampled DataFrame
+        down_df = df.iloc[keep].reset_index(drop=True)
+
+        # 5. Print summary sorted by original frequency, using .loc to avoid warnings
+        new_counts = down_df[self.emotion_cols].sum().astype(int)
+        sorted_emotions = sorted(self.emotion_cols, key=lambda e: orig_counts.loc[e], reverse=True)
+
+        print(f"\nDownsampled by {reduction_pct:.1f}% per label:")
+        print("Label         Orig → New  (% remaining)")
+        for emo in sorted_emotions:
+            o = orig_counts.loc[emo]
+            n = new_counts.loc[emo]
+            pct = n / o * 100
+            print(f"{emo:12s}: {o:5d} → {n:5d}  ({pct:5.1f}%)")
+
+        return down_df
