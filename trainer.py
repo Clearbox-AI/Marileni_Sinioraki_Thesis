@@ -90,7 +90,7 @@ class GoEmotionsTrainingPipeline:
                            logging_strategy: str = "epoch",
                            load_best_model_at_end: bool = True,
                            metric_for_best_model: str = "eval_micro/f1",
-                           greater_is_better: bool = True,
+                           greater_is_better: bool = True, # Save checkpoint after each epoch, reload the best one at the end
                            save_total_limit: int = 2,
                            report_to: str = "wandb",
                            run_name: str = "goemotions-multilabel-bert") -> TrainingArguments:

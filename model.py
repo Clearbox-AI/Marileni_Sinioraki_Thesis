@@ -7,7 +7,7 @@ import numpy as np
 from transformers import BertForSequenceClassification, AutoTokenizer
 from sklearn.metrics import precision_recall_fscore_support, classification_report, precision_recall_curve
 import pandas as pd
-from typing import List, Tuple, Optional
+from typing import List, Optional
 
 
 class MultiLabelBERT:
@@ -44,8 +44,8 @@ class MultiLabelBERT:
         """Create and configure BERT model for multi-label classification."""
         model = BertForSequenceClassification.from_pretrained(
             self.model_name,
-            num_labels=self.num_labels,
-            problem_type="multi_label_classification"
+            num_labels=self.num_labels, # output 27 numbers (one per emotion) instead of default single classification
+            problem_type="multi_label_classification" # Loss function: Uses BCEWithLogitsLoss instead of CrossEntropyLoss, Output activation: Uses sigmoid (can output multiple 1s) instead of softmax (only one 1)
         )
         
         print(f"Initialized {self.model_name} for multi-label classification")
@@ -66,19 +66,19 @@ class MultiLabelBERT:
             List of optimal thresholds for each emotion
         """
         # Convert logits to probabilities
-        probs = 1 / (1 + np.exp(-logits))
+        probs = 1 / (1 + np.exp(-logits)) # Sigmoid: Converts any number to 0-1 range (probability)
         thresholds = []
         
         print("Tuning thresholds for optimal F1 scores...")
         
-        for i in range(probs.shape[1]):
+        for i in range(probs.shape[1]): # For each of the 27 emotions
             # Get precision-recall curve for this label
-            precision, recall, threshold = precision_recall_curve(labels[:, i], probs[:, i])
+            precision, recall, threshold = precision_recall_curve(labels[:, i], probs[:, i]) #  Tests EVERY possible threshold from 0 to 1
             
             # Calculate F1 scores
-            f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)
+            f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8) # + 1e-8: Prevents division by zero
             
-            # Find threshold that maximizes F1
+            # Find threshold that maximizes F1. Picks the threshold that gives the highest F1 score for this specific emotion.
             best_idx = np.argmax(f1_scores)
             best_threshold = threshold[best_idx] if best_idx < len(threshold) else 0.5
             

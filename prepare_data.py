@@ -4,10 +4,10 @@ Downloads and preprocesses the GoEmotions dataset.
 """
 
 import os
-import subprocess
+import subprocess # Running external commands (like wget)
 import pandas as pd
 import matplotlib.pyplot as plt
-from typing import Tuple
+from typing import Tuple # For better code documentation
 
 
 class GoEmotionsDataPreparator:
@@ -15,6 +15,8 @@ class GoEmotionsDataPreparator:
     
     def __init__(self, data_dir: str = "data/full_dataset/"):
         self.data_dir = data_dir
+
+        # The 27 emotions from GoEmotions (neutral removed)
         self.emotion_cols = [
             'admiration', 'amusement', 'anger', 'annoyance', 'approval',
             'caring', 'confusion', 'curiosity', 'desire', 'disappointment',
@@ -26,7 +28,7 @@ class GoEmotionsDataPreparator:
         
     def download_dataset(self) -> None:
         """Download GoEmotions dataset files."""
-        os.makedirs(self.data_dir, exist_ok=True)
+        os.makedirs(self.data_dir, exist_ok=True) # Ensure data directory exists
         
         urls = [
             "https://storage.googleapis.com/gresearch/goemotions/data/full_dataset/goemotions_1.csv",
@@ -35,12 +37,12 @@ class GoEmotionsDataPreparator:
         ]
         
         for url in urls:
-            filename = url.split("/")[-1]
+            filename = url.split("/")[-1] # Gets the last part after the final slash
             filepath = os.path.join(self.data_dir, filename)
             
             if not os.path.exists(filepath):
                 print(f"Downloading {filename}...")
-                subprocess.run(["wget", "-P", self.data_dir, url], check=True)
+                subprocess.run(["wget", "-P", self.data_dir, url], check=True) #  Raises error if download fails
             else:
                 print(f"{filename} already exists, skipping download.")
     
@@ -74,19 +76,21 @@ class GoEmotionsDataPreparator:
         """Group by ID and create multi-hot label vectors."""
         print("Creating multi-label dataset...")
         
+        # Each text was labeled by multiple people. 
+        # Same ID appears multiple times with different emotion ratings.
         # Group by ID and aggregate
         grouped = df.groupby("id").agg({
-            "text": "first",
+            "text": "first", # Takes the text from the first row (they're all identical)
             "subreddit": "first",
             "created_utc": "first",
-            **{col: "sum" for col in self.emotion_cols}
+            **{col: "sum" for col in self.emotion_cols} # Sum the ratings for each emotion
         }).reset_index()
         
         # Create multi-hot label vector (1 only if all raters selected that emotion)
         for col in self.emotion_cols:
             # Get the mean - if all raters selected it, mean will be 1.0
             # If any rater didn't select it, mean will be < 1.0
-            grouped[col] = (df.groupby("id")[col].mean() == 1.0).astype(int)
+            grouped[col] = (df.groupby("id")[col].mean() == 1.0).astype(int) # Converts True→1, False→0
         
         # Remove posts with no emotion label at all
         grouped["num_labels"] = grouped[self.emotion_cols].sum(axis=1)

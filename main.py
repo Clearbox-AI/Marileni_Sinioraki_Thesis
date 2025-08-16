@@ -15,10 +15,12 @@ from utils import (print_dataset_statistics, print_subreddit_statistics,
 
 def main():
     """Main function to run the complete pipeline."""
+
+    # Menu of options users can choose from
     parser = argparse.ArgumentParser(description='GoEmotions Multi-label Emotion Classification')
-    parser.add_argument('--download', action='store_true', 
+    parser.add_argument('--download', action='store_true',  # if user types --download, it sets this to True, otherwise False, it's a boolean flag
                        help='Download the GoEmotions dataset')
-    parser.add_argument('--prepare', action='store_true', 
+    parser.add_argument('--prepare', action='store_true',
                        help='Prepare and preprocess the dataset')
     parser.add_argument('--analyze', action='store_true', 
                        help='Analyze the dataset statistics')
@@ -32,7 +34,7 @@ def main():
                        help='Directory to store outputs and plots')
     parser.add_argument('--model-dir', type=str, default='./results/',
                        help='Directory to store model results')
-    parser.add_argument('--model-name', type=str, default='bert-base-uncased',
+    parser.add_argument('--model-name', type=str, default='bert-base-uncased', # --model-name roberta-base would use RoBERTa instead of BERT
                        help='HuggingFace model name')
     parser.add_argument('--epochs', type=int, default=8,
                        help='Number of training epochs')
@@ -41,7 +43,7 @@ def main():
     parser.add_argument('--learning-rate', type=float, default=2e-5,
                        help='Learning rate')
     
-    args = parser.parse_args()
+    args = parser.parse_args() # Convert command line arguments into a usable object
     
     # Create necessary directories if they don't exist
     create_directories([args.data_dir, args.output_dir, args.model_dir, 'data/', './logs/'])
