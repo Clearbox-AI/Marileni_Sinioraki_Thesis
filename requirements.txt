@@ -1,14 +1,18 @@
-# Essential packages for multi-label emotion classification
+# Core ML packages
 torch>=1.12.0
 transformers>=4.20.0
 datasets>=2.0.0
 scikit-learn>=1.1.0
+
+# Data processing
 pandas>=1.4.0
 numpy>=1.21.0
-matplotlib>=3.5.0
-seaborn>=0.11.0
 
-# Optional packages for experiment tracking and visualization
+# Visualization
+matplotlib>=3.5.0
+
+# NLP augmentation
+nltk>=3.7
+
+# Optional: experiment tracking
 wandb>=0.13.0
-tensorboard>=2.9.0
-accelerate>=0.20.0

@@ -10,7 +10,7 @@ from prepare_data import GoEmotionsDataPreparator
 from data_loader import GoEmotionsDataLoader
 from trainer import GoEmotionsTrainingPipeline
 from utils import (print_dataset_statistics, print_subreddit_statistics, 
-                   plot_emotion_distribution, create_directories, setup_wandb)
+                   plot_emotion_distribution, create_directories)
 
 
 def main():
@@ -28,6 +28,15 @@ def main():
                        help='Train the BERT model')
     parser.add_argument('--downsample', action='store_true',
                        help='Run downsampling experiments')
+    parser.add_argument('--analyze-labels', action='store_true',
+                       help='Run downsampling and analyze underperforming labels')
+    parser.add_argument('--augment-experiment', action='store_true',
+                       help='Run augmentation experiments (EDA + LLM) on underperforming labels')
+    parser.add_argument('--target-count', type=int, default=3166,
+                       help='Target number of examples per label after augmentation')
+    parser.add_argument('--augmentation-types', nargs='+', default=['eda', 'llm'],
+                       choices=['eda', 'llm'],
+                       help='Types of augmentation to test')
     parser.add_argument('--reduction-levels', nargs='+', type=float, 
                        default=[10, 20, 30, 40, 50, 60, 70, 80, 90],
                        help='Downsampling reduction percentages to test')
@@ -52,10 +61,6 @@ def main():
     
     # Create necessary directories if they don't exist
     create_directories([args.data_dir, args.output_dir, args.model_dir, 'data/', './logs/'])
-    
-    # Setup W&B if API key provided
-    if args.wandb_key:
-        setup_wandb(args.wandb_key)
     
     # Data preparation pipeline
     if args.download or args.prepare:
@@ -159,37 +164,80 @@ def main():
             results_path = os.path.join(args.output_dir, "downsampling_results.csv")
             results_df.to_csv(results_path)
             print(f"\nDownsampling results saved to {results_path}")
-
-
-def run_downsampling_experiment():
-    """Run standalone downsampling experiment with default settings."""
-    print("Running downsampling experiment...")
     
-    # Create directories
-    create_directories(['data/', 'outputs/', './results/', './logs/'])
+    # Label analysis experiment
+    if args.analyze_labels:
+        print("\nStarting label analysis experiment...")
+        
+        # Initialize training pipeline
+        training_pipeline = GoEmotionsTrainingPipeline(
+            model_name=args.model_name,
+            output_dir=args.model_dir,
+            num_labels=27
+        )
+        
+        # Run the analysis experiment
+        underperforming_labels = training_pipeline.analyze_underperforming_labels_after_downsampling(
+            reduction_pct=50.0,  # Use 50% reduction as default
+            tokenizer_name=args.model_name,
+            max_length=128,
+            train_ratio=0.6,
+            val_ratio=0.2,
+            test_ratio=0.2
+        )
+        
+        # Save results
+        if underperforming_labels:
+            results_path = os.path.join(args.output_dir, "underperforming_labels.txt")
+            with open(results_path, 'w') as f:
+                f.write("Underperforming labels identified by regression analysis:\n")
+                for label in underperforming_labels:
+                    f.write(f"- {label}\n")
+            print(f"\nUnderperforming labels saved to {results_path}")
     
-    # Initialize training pipeline
-    pipeline = GoEmotionsTrainingPipeline(
-        model_name="bert-base-uncased",
-        output_dir="./results/",
-        num_labels=27
-    )
-    
-    # Run experiments with default reduction levels
-    results_df = pipeline.run_downsampling_experiments(
-        reduction_percentages=[10, 20, 30, 40, 50, 60, 70, 80, 90],
-        max_length=128,
-        train_ratio=0.6,
-        val_ratio=0.2,
-        test_ratio=0.2
-    )
-    
-    # Save results
-    if not results_df.empty:
-        results_df.to_csv("outputs/downsampling_results.csv")
-        print("\nDownsampling experiment complete!")
-    
-    return results_df
+    # Augmentation experiment
+    if args.augment_experiment:
+        print("\nStarting augmentation experiment...")
+        
+        # First identify underperforming labels if not provided
+        training_pipeline = GoEmotionsTrainingPipeline(
+            model_name=args.model_name,
+            output_dir=args.model_dir,
+            num_labels=27
+        )
+        
+        print("Step 1: Identifying underperforming labels...")
+        underperforming_labels = training_pipeline.analyze_underperforming_labels_after_downsampling(
+            reduction_pct=60.0,  # Use 60% reduction for analysis
+            tokenizer_name=args.model_name,
+            max_length=128,
+            train_ratio=0.6,
+            val_ratio=0.2,
+            test_ratio=0.2
+        )
+        
+        if underperforming_labels:
+            print(f"\nStep 2: Running augmentation experiments for: {underperforming_labels}")
+            
+            # Run augmentation experiments
+            results_df = training_pipeline.run_augmentation_experiments(
+                underperforming_labels=underperforming_labels,
+                reduction_pct=60.0,
+                target_count=args.target_count,
+                augmentation_types=args.augmentation_types,
+                tokenizer_name=args.model_name,
+                max_length=128,
+                train_ratio=0.6,
+                val_ratio=0.2,
+                test_ratio=0.2
+            )
+            
+            # Save results
+            results_path = os.path.join(args.output_dir, "augmentation_experiment_results.csv")
+            results_df.to_csv(results_path, index=False)
+            print(f"\nAugmentation experiment results saved to {results_path}")
+        else:
+            print("No underperforming labels identified. Skipping augmentation experiments.")
 
 
 def run_full_pipeline():

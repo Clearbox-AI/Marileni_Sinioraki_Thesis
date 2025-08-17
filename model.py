@@ -168,6 +168,99 @@ class MultiLabelBERT:
         print(df_sorted.round(3))
         
         return df_sorted
+    
+    def identify_underperforming_labels(self, logits: np.ndarray, labels: np.ndarray, 
+                                      thresholds: List[float]) -> List[str]:
+        """
+        Identify underperforming labels using regression analysis on F1 vs support.
+        
+        Args:
+            logits: Model predictions (logits)
+            labels: True labels
+            thresholds: Threshold for each emotion
+            
+        Returns:
+            List of emotion names that are underperforming (below regression line)
+        """
+        from sklearn.linear_model import LinearRegression
+        import matplotlib.pyplot as plt
+        
+        # Get per-class report
+        df_report = self.print_class_report(logits, labels, thresholds, sort_by="support")
+        
+        # Prepare data for regression analysis
+        data = {
+            'label': df_report.index.tolist(),
+            'f1': df_report['f1-score'].values,
+            'support': df_report['support'].values
+        }
+        
+        df = pd.DataFrame(data)
+        
+        # Prepare features and targets for regression
+        X = df["support"].values.reshape(-1, 1)
+        y = df["f1"].values
+        
+        # Fit linear regression
+        reg = LinearRegression()
+        reg.fit(X, y)
+        y_pred = reg.predict(X)
+        
+        # Add regression predictions to DataFrame
+        df["f1_pred"] = y_pred
+        df["above_line"] = df["f1"] >= df["f1_pred"]
+        df["underperforming"] = ~df["above_line"]
+        
+        # Plot regression analysis
+        plt.figure(figsize=(12, 8))
+        
+        # Scatter points based on whether they're above or below the regression line
+        for _, row in df.iterrows():
+            color = 'blue' if row["above_line"] else 'red'
+            plt.scatter(row["support"], row["f1"], color=color, alpha=0.7, s=60)
+            plt.annotate(row["label"], (row["support"], row["f1"]), 
+                        fontsize=9, color=color, alpha=0.9, 
+                        xytext=(5, 5), textcoords='offset points')
+        
+        # Regression line
+        sorted_idx = df["support"].argsort()
+        plt.plot(df["support"].values[sorted_idx], y_pred[sorted_idx], 
+                color='green', linestyle='-', linewidth=2, label='Linear Regression')
+        
+        # Plot settings
+        plt.title('F1-score vs Support per Label (Red = Underperforming vs Regression)')
+        plt.xlabel('Support (Number of examples)')
+        plt.ylabel('F1-score')
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+        
+        # Get underperforming labels
+        underperforming_labels = df[df["underperforming"]]["label"].tolist()
+        
+        # Print analysis summary
+        print("\n" + "="*60)
+        print("REGRESSION ANALYSIS FOR LABEL PERFORMANCE")
+        print("="*60)
+        print(f"Regression R²: {reg.score(X, y):.3f}")
+        print(f"Regression equation: F1 = {reg.coef_[0]:.6f} * support + {reg.intercept_:.3f}")
+        
+        print("\nUnderperforming labels (below regression line):")
+        underperforming_df = df[df["underperforming"]].sort_values("f1", ascending=True)
+        for _, row in underperforming_df.iterrows():
+            diff = row["f1_pred"] - row["f1"]
+            print(f"  {row['label']:12s}: F1={row['f1']:.3f}, Expected={row['f1_pred']:.3f}, Gap={diff:.3f}")
+        
+        print("\nWell-performing labels (above regression line):")
+        performing_df = df[df["above_line"]].sort_values("f1", ascending=False)
+        for _, row in performing_df.iterrows():
+            diff = row["f1"] - row["f1_pred"]
+            print(f"  {row['label']:12s}: F1={row['f1']:.3f}, Expected={row['f1_pred']:.3f}, Boost={diff:.3f}")
+        
+        print("="*60)
+        
+        return underperforming_labels
 
 
 class MultilabelTrainer:

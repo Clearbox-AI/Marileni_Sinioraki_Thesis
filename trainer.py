@@ -91,9 +91,8 @@ class GoEmotionsTrainingPipeline:
                            logging_strategy: str = "epoch",
                            load_best_model_at_end: bool = True,
                            metric_for_best_model: str = "eval_micro/f1",
-                           greater_is_better: bool = True, # Save checkpoint after each epoch, reload the best one at the end
+                           greater_is_better: bool = True,
                            save_total_limit: int = 2,
-                           report_to: str = "wandb",
                            run_name: str = "goemotions-multilabel-bert") -> TrainingArguments:
         """
         Setup training arguments with optimized defaults for multi-label classification.
@@ -117,7 +116,6 @@ class GoEmotionsTrainingPipeline:
             metric_for_best_model=metric_for_best_model,
             greater_is_better=greater_is_better,
             save_total_limit=save_total_limit,
-            report_to=report_to,
             run_name=run_name,
             push_to_hub=False,
             dataloader_num_workers=2
@@ -426,3 +424,284 @@ class GoEmotionsTrainingPipeline:
         else:
             print("No successful experiments completed!")
             return pd.DataFrame()
+    
+    def analyze_underperforming_labels_after_downsampling(self,
+                                                         reduction_pct: float = 50.0,
+                                                         random_state: int = 123,
+                                                         **data_kwargs) -> List[str]:
+        """
+        Run downsampling experiment and identify underperforming labels using regression analysis.
+        
+        Args:
+            reduction_pct: Percentage reduction for downsampling
+            random_state: Random seed
+            **data_kwargs: Arguments for data preparation
+            
+        Returns:
+            List of underperforming label names
+        """
+        print("="*80)
+        print("DOWNSAMPLING + REGRESSION ANALYSIS EXPERIMENT")
+        print("="*80)
+        print(f"Downsample by {reduction_pct}% and identify underperforming labels")
+        print("="*80)
+        
+        # Prepare initial data
+        self.prepare_data(**data_kwargs)
+        train_df, val_df, test_df = self.data_loader.get_raw_dataframes(
+            data_kwargs.get('train_ratio', 0.6),
+            data_kwargs.get('val_ratio', 0.2), 
+            data_kwargs.get('test_ratio', 0.2)
+        )
+        
+        # Downsample training data
+        print(f"\n{'='*60}")
+        print("DOWNSAMPLING EXPERIMENT")
+        print('='*60)
+        
+        downsampled_train = self.data_loader.downsample_by_label_reduction(
+            train_df, reduction_pct=reduction_pct, random_state=random_state
+        )
+        
+        # Convert to HF datasets and tokenize
+        train_ds = self.data_loader.convert_to_hf_dataset(downsampled_train)
+        val_ds = self.data_loader.convert_to_hf_dataset(val_df)
+        test_ds = self.data_loader.convert_to_hf_dataset(test_df)
+        
+        tokenizer_name = data_kwargs.get('tokenizer_name', self.model_name)
+        max_length = data_kwargs.get('max_length', 128)
+        
+        train_ds = self.data_loader.tokenize_dataset(train_ds, tokenizer_name, max_length)
+        val_ds = self.data_loader.tokenize_dataset(val_ds, tokenizer_name, max_length)
+        test_ds = self.data_loader.tokenize_dataset(test_ds, tokenizer_name, max_length)
+        
+        # Create fresh model
+        self.model_wrapper = MultiLabelBERT(self.model_name, self.num_labels)
+        
+        # Setup training
+        training_args = self.setup_training_args(
+            run_name=f"goemotions-analyze-{reduction_pct}pct"
+        )
+        
+        # Update datasets
+        self.train_ds = train_ds
+        self.val_ds = val_ds
+        self.test_ds = test_ds
+        
+        # Train
+        print(f"\nTraining model on {len(downsampled_train)} downsampled samples...")
+        self.create_trainer(training_args)
+        self.trainer.train()
+        
+        # Evaluate and tune thresholds
+        print("\nEvaluating model...")
+        val_metrics, thresholds = self.evaluate_and_tune_thresholds()
+        test_metrics = self.evaluate_test_set()
+        
+        # Get test predictions for regression analysis
+        test_output = self.trainer.predict(test_ds)
+        
+        # Identify underperforming labels using regression analysis
+        print(f"\n{'='*60}")
+        print("REGRESSION ANALYSIS FOR UNDERPERFORMING LABELS")
+        print('='*60)
+        
+        underperforming_labels = self.model_wrapper.identify_underperforming_labels(
+            test_output.predictions, 
+            test_output.label_ids, 
+            thresholds
+        )
+        
+        print(f"\n{'='*80}")
+        print("ANALYSIS COMPLETE")
+        print('='*80)
+        print(f"Underperforming labels identified: {underperforming_labels}")
+        print(f"Overall Test Micro F1: {test_metrics['micro/f1']:.4f}")
+        print(f"Overall Test Macro F1: {test_metrics['macro/f1']:.4f}")
+        print('='*80)
+        
+        return underperforming_labels
+    
+    def run_augmentation_experiments(self,
+                                   underperforming_labels: List[str],
+                                   reduction_pct: float = 60.0,
+                                   target_count: int = 3166,
+                                   augmentation_types: List[str] = ["eda", "llm"],
+                                   random_state: int = 123,
+                                   **data_kwargs) -> pd.DataFrame:
+        """
+        Run experiments comparing baseline, EDA, and LLM augmentation for underperforming labels.
+        
+        Args:
+            underperforming_labels: List of labels to augment
+            reduction_pct: Downsampling percentage
+            target_count: Target number of examples per label after augmentation
+            augmentation_types: List of augmentation types to test ["eda", "llm", "both"]
+            random_state: Random seed
+            **data_kwargs: Arguments for data preparation
+            
+        Returns:
+            DataFrame with experiment results
+        """
+        print("="*80)
+        print("AUGMENTATION EXPERIMENTS")
+        print("="*80)
+        print(f"Testing labels: {underperforming_labels}")
+        print(f"Augmentation types: {augmentation_types}")
+        print(f"Target count per label: {target_count}")
+        print("="*80)
+        
+        # Prepare initial data
+        self.prepare_data(**data_kwargs)
+        train_df, val_df, test_df = self.data_loader.get_raw_dataframes(
+            data_kwargs.get('train_ratio', 0.6),
+            data_kwargs.get('val_ratio', 0.2), 
+            data_kwargs.get('test_ratio', 0.2)
+        )
+        
+        # Downsample training data once
+        down_train = self.data_loader.downsample_by_label_reduction(
+            train_df, reduction_pct=reduction_pct, random_state=random_state
+        )
+        
+        metrics_list = []
+        
+        for label in underperforming_labels:
+            print(f"\n{'='*60}")
+            print(f"TESTING LABEL: {label}")
+            print('='*60)
+            
+            # Baseline: just downsampled data
+            baseline_metrics = self._run_single_experiment(
+                down_train, val_df, test_df, 
+                experiment_name=f"{label}_baseline",
+                **data_kwargs
+            )
+            baseline_metrics.update({
+                "target_label": label,
+                "augmentation_type": "baseline",
+                "reduction_pct": reduction_pct
+            })
+            metrics_list.append(baseline_metrics)
+            
+            # EDA augmentation
+            if "eda" in augmentation_types:
+                print(f"\n--- EDA Augmentation for {label} ---")
+                eda_synthetic = self.data_loader.eda_augment_labels(
+                    down_train, [label], target_count, random_state=random_state
+                )
+                
+                if not eda_synthetic.empty:
+                    train_eda = pd.concat([down_train, eda_synthetic], ignore_index=True)
+                    eda_metrics = self._run_single_experiment(
+                        train_eda, val_df, test_df,
+                        experiment_name=f"{label}_eda",
+                        **data_kwargs
+                    )
+                    eda_metrics.update({
+                        "target_label": label,
+                        "augmentation_type": "eda", 
+                        "reduction_pct": reduction_pct,
+                        "synthetic_samples": len(eda_synthetic)
+                    })
+                    metrics_list.append(eda_metrics)
+            
+            # LLM augmentation
+            if "llm" in augmentation_types:
+                print(f"\n--- LLM Augmentation for {label} ---")
+                llm_synthetic = self.data_loader.llm_augment_labels(
+                    down_train, [label], target_count, random_state=random_state
+                )
+                
+                if not llm_synthetic.empty:
+                    train_llm = pd.concat([down_train, llm_synthetic], ignore_index=True)
+                    llm_metrics = self._run_single_experiment(
+                        train_llm, val_df, test_df,
+                        experiment_name=f"{label}_llm", 
+                        **data_kwargs
+                    )
+                    llm_metrics.update({
+                        "target_label": label,
+                        "augmentation_type": "llm",
+                        "reduction_pct": reduction_pct,
+                        "synthetic_samples": len(llm_synthetic)
+                    })
+                    metrics_list.append(llm_metrics)
+        
+        # Create results DataFrame
+        results_df = pd.DataFrame(metrics_list)
+        
+        # Print comparison summary
+        self._print_augmentation_summary(results_df)
+        
+        return results_df
+    
+    def _run_single_experiment(self, train_df, val_df, test_df, experiment_name, **data_kwargs):
+        """Run a single training experiment and return metrics."""
+        
+        # Convert to HF datasets and tokenize
+        train_ds = self.data_loader.convert_to_hf_dataset(train_df)
+        val_ds = self.data_loader.convert_to_hf_dataset(val_df)
+        test_ds = self.data_loader.convert_to_hf_dataset(test_df)
+        
+        tokenizer_name = data_kwargs.get('tokenizer_name', self.model_name)
+        max_length = data_kwargs.get('max_length', 128)
+        
+        train_ds = self.data_loader.tokenize_dataset(train_ds, tokenizer_name, max_length)
+        val_ds = self.data_loader.tokenize_dataset(val_ds, tokenizer_name, max_length)
+        test_ds = self.data_loader.tokenize_dataset(test_ds, tokenizer_name, max_length)
+        
+        # Create fresh model
+        self.model_wrapper = MultiLabelBERT(self.model_name, self.num_labels)
+        
+        # Setup training
+        training_args = self.setup_training_args(
+            run_name=f"goemotions-{experiment_name}",
+            output_dir=f"./results/{experiment_name}"
+        )
+        
+        # Update datasets
+        self.train_ds = train_ds
+        self.val_ds = val_ds
+        self.test_ds = test_ds
+        
+        # Train
+        print(f"\nTraining {experiment_name} on {len(train_df)} samples...")
+        self.create_trainer(training_args)
+        self.trainer.train()
+        
+        # Evaluate
+        print(f"Evaluating {experiment_name}...")
+        val_metrics, thresholds = self.evaluate_and_tune_thresholds()
+        test_metrics = self.evaluate_test_set()
+        
+        return {
+            'train_samples': len(train_df),
+            **{f"test_{k}": v for k, v in test_metrics.items()}
+        }
+    
+    def _print_augmentation_summary(self, results_df):
+        """Print summary of augmentation experiment results."""
+        
+        print(f"\n{'='*80}")
+        print("AUGMENTATION EXPERIMENT SUMMARY")
+        print('='*80)
+        
+        for label in results_df['target_label'].unique():
+            label_results = results_df[results_df['target_label'] == label]
+            
+            print(f"\nLabel: {label}")
+            print("-" * 40)
+            
+            for _, row in label_results.iterrows():
+                aug_type = row['augmentation_type']
+                micro_f1 = row['test_micro/f1']
+                macro_f1 = row['test_macro/f1']
+                samples = row.get('synthetic_samples', 0)
+                
+                if aug_type == 'baseline':
+                    print(f"  Baseline:     Micro F1={micro_f1:.4f}, Macro F1={macro_f1:.4f}")
+                else:
+                    print(f"  {aug_type.upper():12s}: Micro F1={micro_f1:.4f}, Macro F1={macro_f1:.4f} (+{samples} synthetic)")
+        
+        print('='*80)
