@@ -1,11 +1,11 @@
 # GoEmotions Multi-Label Emotion Classification
 
-A streamlined implementation of multi-label emotion classification using BERT on the GoEmotions dataset with advanced experimentation capabilities including downsampling, regression analysis, and data augmentation.
+A streamlined implementation of multi-label emotion classification using BERT on the GoEmotions dataset with experimentation capabilities including downsampling, regression analysis, and data augmentation.
 
 ## Features
 
 - **Multi-label BERT Classification**: Fine-tuned BERT model for 27 emotion categories
-- **Smart Data Splitting**: Subreddit-stratified splits to prevent data leakage  
+- **Data Splitting**: Subreddit-stratified splits to prevent data leakage  
 - **Downsampling Experiments**: Test model performance under data scarcity
 - **Regression Analysis**: Identify underperforming emotion labels using statistical analysis
 - **Data Augmentation**: EDA (synonym replacement) and LLM-based augmentation techniques
