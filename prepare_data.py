@@ -4,7 +4,7 @@ Downloads and preprocesses the GoEmotions dataset.
 """
 
 import os
-import subprocess # Running external commands (like wget)
+import subprocess # Running external commands
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Tuple # For better code documentation
