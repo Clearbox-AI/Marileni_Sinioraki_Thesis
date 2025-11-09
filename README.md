@@ -84,6 +84,7 @@ GoEmotions: 58k Reddit comments labeled with 27 emotions
 - **Threshold Optimization**: Per-emotion F1 score maximization
 - **Evaluation**: Micro/macro precision, recall, F1-score
 
+<!--
 ## Results Directory Structure
 ```
 results/
@@ -92,6 +93,6 @@ results/
 ├── underperforming_labels.txt
 └── augmentation_experiment_results.csv
 ```
-
+-->
 For detailed usage examples, see `examples.py`.
 
